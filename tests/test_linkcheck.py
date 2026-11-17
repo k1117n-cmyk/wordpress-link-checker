@@ -305,6 +305,48 @@ class LogicTests(unittest.TestCase):
         self.assertEqual(checker.sources[BASE + "/second"]["state"], "unprocessed")
         self.assertTrue(checker.issues)
 
+    def test_summary_shows_pending_occurrences_and_amazon_exclusion(self):
+        html = ('<title>確認用の記事</title><a href="/blocked">参考資料</a>'
+                '<a href="/blocked"><img alt=""></a><a href="https://link.amazon/test">商品</a>')
+        c, client, scenario, _ = self.client({BASE + "/": reply(body=html, headers={"content-type": "text/html"}),
+                                             BASE + "/blocked": reply(403)}, collection="urls")
+        checker = m.Checker(c, client, "test")
+        checker.collect()
+        checker.extract()
+        checker.check_links()
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory)
+            self.assertEqual(checker.write_reports(out), 1)
+            summary = (out / "summary.md").read_text()
+        for expected in ["再確認済みリンク切れ: 0 URL / 0 掲載箇所", "その他の要確認・未処理: 1 URL / 2 掲載箇所",
+                         "Amazonリンク（通信せず除外）: 1 URL / 1 掲載箇所", "掲載元: " + BASE + "/",
+                         "記事タイトル: 確認用の記事", "リンク文字列: 参考資料", "文字列なし・画像リンクなど",
+                         "検査URL: " + BASE + "/blocked", "HTTP: 403", "判定: pending"]:
+            self.assertIn(expected, summary)
+        self.assertLess(summary.index("判定: pending"), summary.index("## 判定件数"))
+        self.assertIn("## 分類の意味", summary)
+        self.assertIn("403（アクセス拒否）", summary)
+        self.assertIn("正常・リンク切れの判定はしていません", summary)
+        self.assertNotIn("分類の意味はREADME.mdを参照", summary)
+        for kind in m.REPORT_DESCRIPTIONS:
+            self.assertIn(f"| {kind} |", summary.split("## 分類の意味", 1)[1])
+        self.assertFalse(any("link.amazon" in call[0] for call in scenario.calls))
+
+    def test_summary_prioritizes_broken_and_caps_details_without_dropping_tsv(self):
+        c, client, _, _ = self.client(collection="urls")
+        checker = m.Checker(c, client, "test")
+        checker.links = [dict(classification="pending", request_url=BASE + "/blocked") for _ in range(101)]
+        checker.links.append(dict(classification="broken", request_url=BASE + "/gone", status=404))
+        with tempfile.TemporaryDirectory() as directory:
+            out = Path(directory)
+            self.assertEqual(checker.write_reports(out), 1)
+            summary = (out / "summary.md").read_text()
+            with (out / "links.tsv").open() as f:
+                self.assertEqual(len(list(csv.DictReader(f, delimiter="\t"))), 102)
+        self.assertIn("### 1. 再確認済みリンク切れ", summary)
+        self.assertEqual(summary.count("### "), 100)
+        self.assertIn("省略掲載箇所: 2", summary)
+
     def test_soft404_is_not_confirmed_broken(self):
         c, client, _, _ = self.client({BASE + "/x": reply(body="Page missing")}, soft_404_patterns=["Page missing"])
         self.assertEqual(m.inspect_link(client, BASE + "/x", c)["classification"], "soft_404_suspected")

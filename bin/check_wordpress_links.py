@@ -580,6 +580,76 @@ def inspect_link(client, url, config):
             "last_checked": now(), "incomplete": r.get("incomplete", False) or kind == "unprocessed"}
 
 
+REPORT_LABELS = {
+    "broken": "再確認済みリンク切れ", "candidate": "リンク切れ候補（再確認待ち）",
+    "unreachable": "到達失敗", "pending": "確認保留（認証・アクセス拒否・頻度制限）",
+    "tls_error": "TLSエラー", "redirect_error": "転送エラー", "invalid_url": "不正なURL",
+    "review": "要確認", "soft_404_suspected": "エラーページの疑い", "unprocessed": "未処理",
+}
+
+REPORT_DESCRIPTIONS = {
+    "broken": "再確認でも404（見つからない）・410（削除済み）。リンク切れ候補としてブラウザで確認してください。",
+    "candidate": "初回404・410。時間上限などで再確認が終わっていないため、リンク切れは未確定です。",
+    "unreachable": "DNS・接続・タイムアウト・408・5xxなどで到達を確認できません。一時的な障害の可能性もあります。",
+    "pending": "401（認証が必要）・403（アクセス拒否）・429（頻度制限）のため確認保留。リンク切れとは限りません。",
+    "tls_error": "証明書など、HTTPSの安全な接続を確認する処理でエラーになりました。",
+    "redirect_error": "転送ループ、転送先の欠落、転送回数の上限超過などで確認できませんでした。",
+    "invalid_url": "URLの形式が不正、または非公開IP・許可外ポートなどアクセスできない接続先です。",
+    "review": "通常の到達成功・リンク切れ候補などに分類できない応答、または再確認結果の変化があり、個別確認が必要です。",
+    "soft_404_suspected": "成功応答でも、本文が設定したエラーページの規則に一致しました。リンク切れは未確定です。",
+    "redirected": "転送先でHTTP上の到達を確認しました。",
+    "recovered": "初回に問題がありましたが、再確認・再試行でHTTP上の到達を確認しました。",
+    "unprocessed": "時間・件数の上限、robots.txtの取得失敗などで未検査です。理由欄と未完了の理由を確認してください。",
+    "excluded": "Amazon関連リンク、robots.txtの禁止、除外設定、未対応形式などで対象外です。正常・リンク切れの判定はしていません。",
+    "ok": "HTTPの成功応答（2xx）で到達を確認しました。ページ内容や商品の販売継続まで保証するものではありません。",
+}
+
+
+def report_classification_guide():
+    return ["## 分類の意味", "", "| 分類 | 意味・確認の仕方 |", "|---|---|"] + [
+        f"| {kind} | {description} |" for kind, description in REPORT_DESCRIPTIONS.items()
+    ]
+
+
+def report_overview(config, run_id, finished, links, source_counts, incomplete, code):
+    def total(rows):
+        return f"{len({r.get('request_url') for r in rows if r.get('request_url')})} URL / {len(rows)} 掲載箇所"
+
+    broken = [r for r in links if r["classification"] == "broken"]
+    attention = [r for kind in REPORT_LABELS for r in links if r["classification"] == kind]
+    other = [r for r in attention if r["classification"] != "broken"]
+    amazon = [r for r in links if r["classification"] == "excluded" and
+              r.get("reason") == "Amazon関連リンク（クリック集計への影響防止）"]
+    lines = ["# WordPressリンク検査結果", "", f"- 対象: {config['site_url']}",
+             f"- 実行ID: {run_id}", f"- 終了日時: {finished}",
+             f"- 状態: {'検査未完了' if incomplete else '設定した範囲の検査完了'}",
+             f"- 終了コード: {code}", f"- 再確認済みリンク切れ: {total(broken)}",
+             f"- その他の要確認・未処理: {total(other)}", f"- Amazonリンク（通信せず除外）: {total(amazon)}",
+             f"- 掲載元: {sum(source_counts.values())} / 処理状態: {dict(source_counts)}", ""]
+    if not broken:
+        lines += ["再確認済みのリンク切れはありません。確認保留・未処理がある場合は、以下の内容を確認してください。", ""]
+    if amazon:
+        lines += ["Amazon関連リンクにはアクセスしておらず、リンク切れかどうかは判定していません。", ""]
+    lines += ["## 確認が必要なリンク", ""]
+    if not attention:
+        lines += ["該当するリンクはありません。", ""]
+    for i, row in enumerate(attention[:100], 1):
+        lines += [f"### {i}. {REPORT_LABELS[row['classification']]}", ""]
+        fields = [("掲載元", row.get("source_url")), ("記事タイトル", row.get("source_title")),
+                  ("リンク文字列", row.get("text") or "（文字列なし・画像リンクなど）"),
+                  ("検査URL", row.get("request_url") or row.get("absolute_url") or row.get("raw_url")),
+                  ("最終URL", row.get("final_url") or "（なし）"),
+                  ("HTTP", row.get("status") or "（応答なし・未取得）"),
+                  ("判定", row["classification"]), ("理由", row.get("reason") or "（なし）")]
+        for label, value in fields:
+            lines.append(f"    {label}: {' '.join(str(value or '').splitlines())}")
+        lines.append("")
+    if len(attention) > 100:
+        lines += [f"省略掲載箇所: {len(attention) - 100}。全件は links.tsv に記録しています。", ""]
+    lines += ["HTTP応答に基づく結果です。リンク先の削除を断定せず、必要に応じてブラウザで確認してください。", ""]
+    return lines
+
+
 class Checker:
     def __init__(self, c, client, run_id):
         self.c, self.client, self.run_id = c, client, run_id
@@ -788,16 +858,16 @@ class Checker:
         write_tsv(out / "sources.tsv", self.sources.values(), ["url", "discovered_by", "state", "reason", "link_count"])
         order = ["broken", "candidate", "unreachable", "pending", "tls_error", "redirect_error", "invalid_url",
                  "review", "soft_404_suspected", "redirected", "recovered", "unprocessed", "excluded", "ok"]
-        lines = ["# リンク検査結果", "", f"- 実行ID: {self.run_id}", f"- 終了日時: {now()}",
-                 f"- 状態: {'検査未完了' if incomplete else '設定した範囲の検査完了'}", f"- 終了コード: {code}",
-                 f"- 収集方法: {self.c['collection']}", f"- 掲載元発見数: {len(self.sources)}",
+        lines = report_overview(self.c, self.run_id, now(), self.links, source_counts, incomplete, code)
+        lines += ["## 検査範囲", "", f"- 収集方法: {self.c['collection']}", f"- 掲載元発見数: {len(self.sources)}",
                  f"- 掲載元内訳: {dict(source_counts)}", f"- 掲載箇所数: {len(self.links)}",
-                 f"- HTTP確認対象URL数: {len(self.results)}", "", "## 判定件数", "",
+                 f"- 確認対象URL数（除外を含む）: {len(self.results)}", "", "## 判定件数", "",
                  "| 分類 | 掲載箇所 | URL数 |", "|---|---:|---:|"]
         for kind in order:
             urls = {x["request_url"] for x in self.links if x["classification"] == kind and x["request_url"]}
             lines.append(f"| {kind} | {counts[kind]} | {len(urls)} |")
-        lines += ["", "分類の意味はREADME.mdを参照。除外した範囲・非HTML・未対応形式を含め、サイト全体の完全性を保証する結果ではありません。",
+        lines += [""] + report_classification_guide()
+        lines += ["", "除外した範囲・非HTML・未対応形式を含め、サイト全体の完全性を保証する結果ではありません。",
                   "問題の掲載元・位置はlinks.tsv、要求の原記録はrequests.jsonlに記録しています。", "", "## 未完了の理由", ""]
         lines += ["- " + x.replace("\n", " ") for x in dict.fromkeys(self.issues)] or ["なし"]
         lines += ["", "## 収集記録", "", "```json", json.dumps(self.collected, ensure_ascii=False, indent=2), "```",
