@@ -1,0 +1,19 @@
+# Local settings: publish only the supplied examples.
+conf/*.json
+!conf/linkcheck_example.json
+!conf/linkcheck_urls_example.json
+
+# Generated reports and local runtime files.
+reports/
+logs/
+state/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.DS_Store
+.env
+.env.*
+*.key
+*.pem
