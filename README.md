@@ -1,5 +1,10 @@
 # wordpress-link-checker
 
+[![Python 3.11以上](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](#ダウンロード)
+![対応OS: macOS / Linux](https://img.shields.io/badge/OS-macOS%20%7C%20Linux-555555)
+![依存: Python標準ライブラリのみ](https://img.shields.io/badge/Dependencies-Standard%20library-2ea44f)
+[![ライセンス: 独自利用許諾](https://img.shields.io/badge/License-Custom-orange)](LICENSE.txt)
+
 WordPressサイトのリンク切れ候補を検出し、掲載元と検査結果をレポートにまとめる、無料のPython製CLIツールです。公開ページから内部・外部リンクを抽出し、GET応答を検査します。GUI画面はありません。Python 3.11以上、macOS/Linuxで動作する構成です。追加パッケージは不要です。Windowsはロック処理に使用するfcntlに対応しないため対象外です。
 
 ## ダウンロード
