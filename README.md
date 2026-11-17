@@ -1,5 +1,7 @@
 # wordpress-link-checker
 
+現行バージョン：**0.2.0**（2026年11月17日）
+
 [![Python 3.11以上](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](#ダウンロード)
 ![対応OS: macOS / Linux](https://img.shields.io/badge/OS-macOS%20%7C%20Linux-555555)
 ![依存: Python標準ライブラリのみ](https://img.shields.io/badge/Dependencies-Standard%20library-2ea44f)
@@ -16,6 +18,26 @@ python3 --version
 ```
 
 Python 3.11以上が必要です。追加パッケージのインストールは不要です。
+
+ツールのバージョンは、次のコマンドで確認できます。設定ファイルは不要で、通信や検査は行いません。
+
+```sh
+python3 bin/check_wordpress_links.py --version
+```
+
+## 変更履歴
+
+### 0.2.0（2026年11月17日）
+
+- Amazonの直接リンク・既知の短縮リンク・転送先を通信前に除外。
+- 要約の冒頭にリンク切れ・要確認・Amazon除外の件数を表示。
+- 要確認リンクの掲載元・リンク文字列・URL・HTTP判定・理由を最大100掲載箇所まで表示。
+- 全14分類の意味と確認方法を要約内に掲載。
+- `--version` と要約レポートにバージョンを表示。
+
+### 0.1（初期公開版）
+
+- 公開ページのリンクをGETで確認し、要約・TSV・通信ログを出力。
 
 ## 実行
 

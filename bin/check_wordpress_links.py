@@ -33,7 +33,8 @@ import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
 JST = timezone(timedelta(hours=9))
-UA = "WordPressLinkCheck/0.1"
+VERSION = "0.2.0"
+UA = f"WordPressLinkCheck/{VERSION}"
 REDIRECTS = {301, 302, 303, 307, 308}
 AMAZON_DOMAINS = frozenset({
     "amazon.co.jp", "amazon.jp", "amazon.com", "amazon.ca", "amazon.com.mx",
@@ -620,7 +621,7 @@ def report_overview(config, run_id, finished, links, source_counts, incomplete, 
     other = [r for r in attention if r["classification"] != "broken"]
     amazon = [r for r in links if r["classification"] == "excluded" and
               r.get("reason") == "Amazon関連リンク（クリック集計への影響防止）"]
-    lines = ["# WordPressリンク検査結果", "", f"- 対象: {config['site_url']}",
+    lines = ["# WordPressリンク検査結果", "", f"- バージョン: {VERSION}", f"- 対象: {config['site_url']}",
              f"- 実行ID: {run_id}", f"- 終了日時: {finished}",
              f"- 状態: {'検査未完了' if incomplete else '設定した範囲の検査完了'}",
              f"- 終了コード: {code}", f"- 再確認済みリンク切れ: {total(broken)}",
@@ -942,6 +943,7 @@ class ActivityIndicator:
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--version", action="version", version=f"wordpress-link-checker {VERSION}")
     parser.add_argument("--config", type=Path, required=True, help="専用JSON設定ファイル")
     parser.add_argument("--validate-config", action="store_true", help="設定検証のみ。HTTP要求やファイル作成を行わない")
     args = parser.parse_args(argv)
