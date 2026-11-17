@@ -149,6 +149,39 @@ class LogicTests(unittest.TestCase):
         self.assertEqual(client.fetch(BASE + "/r", 100)["error"], "excluded")
         self.assertFalse(any("add-to-cart" in x[0] for x in scenario.calls))
 
+    def test_amazon_links_are_excluded_without_any_requests(self):
+        urls = ["https://" + domain + "/product?tag=example-22" for domain in m.AMAZON_DOMAINS]
+        urls += ["https://www.amazon.co.jp/dp/EXAMPLE?tag=example-22",
+                 "https://WWW.AMAZON.COM./dp/EXAMPLE", "https://amzn.to/short",
+                 "https://link.amazon/B0iOioCT6",
+                 "https://www.amazon.co.jp/dp/B0G4NYSWS1?th=1&linkCode=ll2&tag=golden-rocks-22"
+                 "&linkId=8a203b4f303a84a7a77c51e17042567a&ref_=as_li_ss_tl"]
+        for url in urls:
+            with self.subTest(url=url):
+                c, client, scenario, log = self.client()
+                result = m.inspect_link(client, url, c)
+                self.assertEqual(result["classification"], "excluded")
+                self.assertIn("Amazon", result["reason"])
+                self.assertEqual(scenario.calls, [])
+                self.assertEqual(log.getvalue(), "")
+
+    def test_redirect_to_amazon_is_stopped_before_robots_or_product_request(self):
+        for target in ["https://www.amazon.co.jp/dp/EXAMPLE?tag=example-22", "https://amzn.to/short",
+                       "https://link.amazon/B0iOioCT6"]:
+            with self.subTest(target=target):
+                c, client, scenario, _ = self.client({BASE + "/go": reply(302, headers={"location": target})})
+                result = m.inspect_link(client, BASE + "/go", c)
+                self.assertEqual(result["classification"], "excluded")
+                self.assertEqual([call[0] for call in scenario.calls], [BASE + "/robots.txt", BASE + "/go"])
+
+    def test_amazon_domain_lookalikes_are_still_checked(self):
+        for url in ["https://amazon.com.example.test/product", "https://notamazon.co.jp/product",
+                    BASE + "/amazon.co.jp?next=https%3A%2F%2Famzn.to%2Fshort"]:
+            with self.subTest(url=url):
+                c, client, scenario, _ = self.client()
+                self.assertEqual(m.inspect_link(client, url, c)["classification"], "ok")
+                self.assertIn(url, [call[0] for call in scenario.calls])
+
     def test_robots_and_unknown(self):
         for result, error in [(reply(200, "User-agent: *\nDisallow: /private\n"), "robots_excluded"),
                               (reply(503), "robots_unknown"), (reply(200, "x", truncated=True), "robots_unknown")]:

@@ -35,6 +35,14 @@ ROOT = Path(__file__).resolve().parents[1]
 JST = timezone(timedelta(hours=9))
 UA = "WordPressLinkCheck/0.1"
 REDIRECTS = {301, 302, 303, 307, 308}
+AMAZON_DOMAINS = frozenset({
+    "amazon.co.jp", "amazon.jp", "amazon.com", "amazon.ca", "amazon.com.mx",
+    "amazon.com.br", "amazon.co.uk", "amazon.de", "amazon.fr", "amazon.it",
+    "amazon.es", "amazon.nl", "amazon.com.be", "amazon.se", "amazon.pl",
+    "amazon.ie", "amazon.in", "amazon.com.au", "amazon.sg", "amazon.ae",
+    "amazon.sa", "amazon.com.tr", "amazon.eg", "amazon.co.za",
+    "amzn.to", "amzn.asia", "amzn.eu", "amzn.in", "amzn.com", "a.co", "link.amazon",
+})
 DEFAULTS = {
     "collection": "sitemap", "sitemap_urls": [], "additional_urls": [],
     "allowed_origins": [], "allowed_path_prefixes": ["/"],
@@ -412,6 +420,11 @@ class Client:
             time.sleep(min(.2, target - time.monotonic()))
 
     def excluded(self, url):
+        # Check the actual hostname before fetching even robots.txt. Use domain
+        # boundaries so unrelated hosts such as amazon.com.example.org are safe.
+        host = (urlsplit(url).hostname or "").lower().rstrip(".")
+        if any(host == domain or host.endswith("." + domain) for domain in AMAZON_DOMAINS):
+            return "Amazon関連リンク（クリック集計への影響防止）"
         decoded = unquote(url)
         p = urlsplit(decoded)
         if re.search(r"/(?:wp-admin|wp-login\.php|logout|log-out|cart|checkout)(?:/|$)", p.path, re.I):
